@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package foodordering;
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+service FoodOrderingService {
+  // Customer: browse restaurants and their menus.
+  rpc ListRestaurants(RestaurantRequest) returns (RestaurantResponse);
+
+  // Customer: place an order; server assigns a unique order id (PLACED).
+  rpc PlaceOrder(OrderRequest) returns (OrderResponse);
+
+  // Customer: one-shot status query.
+  rpc GetOrderStatus(OrderStatusRequest) returns (OrderStatusResponse);
+
+  // Restaurant: move an order to a new state (validated by the server).
+  rpc UpdateOrderStatus(OrderStatusUpdate) returns (Acknowledge);
+
+  // Customer: server-streaming; receives every status change until the
+  // order reaches a terminal state (READY or CANCELLED).
+  rpc SubscribeToOrderUpdates(OrderRequest) returns (stream OrderUpdate);
+
+  // Customer: cancel an order (only allowed while PLACED).
+  rpc CancelOrder(CancelOrderRequest) returns (Acknowledge);
+
+  // Restaurant: list the orders addressed to it that are not yet finished.
+  rpc GetPendingOrders(PendingOrdersRequest) returns (PendingOrdersResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+enum OrderStatus {
+  PLACED    = 0;
+  ACCEPTED  = 1;
+  PREPARING = 2;
+  READY     = 3;
+  CANCELLED = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Restaurant listing
+// ---------------------------------------------------------------------------
+message RestaurantRequest {}
+
+message FoodItem {
+  string name  = 1;
+  int32  price = 2;
+}
+
+message Restaurant {
+  string            name  = 1;
+  repeated FoodItem items = 2;
+}
+
+message RestaurantResponse {
+  repeated Restaurant restaurants = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+message OrderItem {
+  string name     = 1;
+  int32  quantity = 2;
+}
+
+// Used both for PlaceOrder (restaurant_name + items) and for
+// SubscribeToOrderUpdates (order_id), as required by the assignment API.
+message OrderRequest {
+  string             restaurant_name = 1;
+  repeated OrderItem items           = 2;
+  string             order_id        = 3;
+}
+
+message OrderResponse {
+  string      order_id = 1;
+  int32       total    = 2;
+  OrderStatus status   = 3;
+}
+
+message OrderStatusRequest {
+  string order_id = 1;
+}
+
+message OrderStatusResponse {
+  string             order_id        = 1;
+  string             restaurant_name = 2;
+  repeated OrderItem items           = 3;
+  int32              total           = 4;
+  OrderStatus        status          = 5;
+}
+
+message OrderStatusUpdate {
+  string      order_id        = 1;
+  string      restaurant_name = 2;  // must own the order
+  OrderStatus new_status      = 3;
+}
+
+message Acknowledge {
+  bool        success = 1;
+  string      message = 2;
+  OrderStatus status  = 3;  // status after the operation
+}
+
+message OrderUpdate {
+  string      order_id = 1;
+  OrderStatus status   = 2;
+  string      message  = 3;
+}
+
+message CancelOrderRequest {
+  string order_id = 1;
+}
+
+message PendingOrdersRequest {
+  string restaurant_name = 1;
+}
+
+message PendingOrdersResponse {
+  repeated OrderStatusResponse orders = 1;
+}
