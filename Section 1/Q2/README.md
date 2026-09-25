@@ -2,7 +2,7 @@
 
 Finds the shortest distance from node 0 to every node in a weighted directed
 graph, using iterative MapReduce (parallel Bellman-Ford). Written in Python,
-orchestrated with Bash. Works both on a laptop and on a Slurm cluster.
+orchestrated with Bash.
 
 ---
 
@@ -16,7 +16,6 @@ orchestrated with Bash. Works both on a laptop and on a Slurm cluster.
 | `reducer.py` | Picks the minimum distance per node, counts how many changed |
 | `format_output.py` | Prints the final `node distance` lines, `INF` if unreachable |
 | `sssp_local.sh` | Runs the whole thing on one machine |
-| `sssp_slurm.sh` | Runs the whole thing on a Slurm cluster |
 | `gen_graph.py` | Makes random test graphs (same seed = same graph) |
 | `dijkstra_ref.py` | Ordinary sequential Dijkstra, used to check our answers |
 | `verify.sh` | Runs all tests and compares against Dijkstra |
@@ -94,71 +93,7 @@ diff big_out.txt big_ref.txt && echo MATCH
 
 ---
 
-## Running on the Slurm cluster (RCE)
 
-**Step 1 — copy this folder to the cluster**
-```bash
-scp -r "Section 1" <your-username>@<cluster-address>:~/
-```
-
-**Step 2 — log in and go to the folder**
-```bash
-ssh <your-username>@<cluster-address>
-cd "Section 1"
-chmod +x *.sh *.py
-```
-
-**Step 3 — make a graph to run on** (or upload your own)
-```bash
-python3 gen_graph.py 10000 50000 7 > big.txt
-```
-
-**Step 4 — submit the job**
-```bash
-sbatch sssp_slurm.sh big.txt big_out.txt
-```
-Slurm replies with something like `Submitted batch job 12345`.
-
-**Step 5 — wait for it to finish**
-```bash
-squeue -u $USER          # your job is listed while it runs; empty when done
-```
-
-**Step 6 — look at the results**
-```bash
-cat sssp_results_12345.out                         # progress + timing table (use your job number)
-cat big_out.txt                                    # the shortest distances
-cat perf_results/sssp_iteration_timings.csv        # per-iteration timings for the report
-```
-If anything went wrong, the error is in `sssp_results_12345.err`.
-
-**Step 7 — verify the cluster answer**
-```bash
-python3 dijkstra_ref.py < big.txt > big_ref.txt
-diff big_out.txt big_ref.txt && echo MATCH
-```
-
-### Changing the number of nodes / tasks
-
-Edit the top of `sssp_slurm.sh`:
-```
-#SBATCH --nodes=4
-#SBATCH --ntasks=4
-```
-Set both to 1, 2, 4, 8, ... and re-submit to get scaling numbers for the report.
-Or override without editing: `sbatch --nodes=2 --ntasks=2 sssp_slurm.sh big.txt out2.txt`
-
-### Things that can go wrong on the cluster
-
-- **`python3: command not found`** — some clusters need `module load python` first.
-  Add that line near the top of `sssp_slurm.sh`, right after `cd "$SCRIPT_DIR"`.
-- **Job stays `PD` (pending) forever** — the cluster is busy or you asked for more
-  nodes than your partition allows. Try fewer nodes, or add `#SBATCH --partition=<name>`
-  as given in the RCE document.
-- **Files from other tasks missing** — the folder must be on the shared filesystem
-  (your home directory is fine). Don't run it from `/tmp`.
-
----
 
 ## How it works (short version)
 

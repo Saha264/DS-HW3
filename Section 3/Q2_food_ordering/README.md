@@ -15,7 +15,6 @@ are pushed to tracking customers in real time via a server-streaming RPC.
 | `server.py` | Server: restaurants, orders, state machine, streaming |
 | `customer.py` | Customer CLI |
 | `restaurant.py` | Restaurant CLI |
-| `test_system.py` | Automated end-to-end test (concurrency + all error cases) |
 | `setup.sh` | One-time: makes a venv, installs gRPC, generates stubs |
 | `generate_stubs.sh` | Regenerates the `_pb2` files from the `.proto` |
 | `requirements.txt` | Python dependencies |
@@ -62,12 +61,6 @@ python3 restaurant.py localhost:50051 "Pizza House"
 Open as many customer/restaurant terminals as you like — e.g. a 4th one as
 `"Burger Point"`.
 
-**Automated test** (starts its own server; no other terminal needed):
-```bash
-python3 test_system.py
-```
-Should end with `ALL CHECKS PASSED`.
-
 ---
 
 ## Commands
@@ -95,8 +88,22 @@ exit
 
 ## Demonstration
 
-### 1. Listing restaurants (customer)
+Three terminals, one machine. The customer subscribes to the order and then
+sits idle; the restaurant drives the order from a separate terminal.
+
+### Terminal 1 — server
+
 ```
+$ python3 server.py localhost:50051
+[Server] Food Ordering Server listening on localhost:50051
+```
+
+### Terminal 2 — customer
+
+```
+$ python3 customer.py localhost:50051
+[Client] Connected. Type 'help' for commands.
+
 > restaurants
 [Server]
 1. Pizza House
@@ -107,56 +114,73 @@ exit
    - Veg Burger    : 180
    - Cheese Burger : 220
    - French Fries  : 120
-```
 
-### 2. Placing an order (customer)
-```
 > order Pizza House "Margherita Pizza" 1 "Garlic Bread" 2
 [Client] Order placed successfully.
 [Client] Order ID: O101
 [Client] Total: 550
 [Client] Status: PLACED
-```
 
-### 3. Customer starts tracking (streaming subscription)
-```
 > track O101
 [Client] Tracking order O101...
+
 [Update] Order O101 : PLACED
-```
-The prompt returns immediately; updates print whenever they arrive.
-
-### 4. Restaurant processes the order
-```
-> pending
-[Restaurant] Order O101 : PLACED   (Margherita Pizza x1, Garlic Bread x2 | Total: 550)
-> accept O101
-[Restaurant] Order O101 : ACCEPTED
-> prepare O101
-[Restaurant] Order O101 : PREPARING
-> ready O101
-[Restaurant] Order O101 : READY
-```
-
-### 5. Customer receives real-time updates (no polling)
-Meanwhile in the customer terminal, without typing anything:
-```
 [Update] Order O101 : ACCEPTED
 [Update] Order O101 : PREPARING
 [Update] Order O101 : READY
 [Client] Tracking of O101 finished (order reached a final state).
+
+> status O101
+[Client] Order O101 : READY
+[Client]   Pizza House | Margherita Pizza x1, Garlic Bread x2 | Total: 550
+
+> order Taco Town "Burrito" 1
+[Error] Restaurant 'Taco Town' does not exist. (NOT_FOUND)
+
+> exit
+[Client] Bye.
 ```
 
-### 6. Concurrent clients
-Open a second customer and place an order while the first is tracking; open
-a second restaurant as `"Burger Point"`. Every order gets a unique id and each
-restaurant only sees its own orders.
+The four `[Update]` lines arrived without anything being typed here. The only
+commands issued were `track O101`, and then `status O101` after the order had
+already finished.
 
-`test_system.py` additionally fires **20 simultaneous `PlaceOrder` calls**
-(result: 20 unique ids) and **20 simultaneous `accept` calls on one order**
-(result: exactly one succeeds, 19 are rejected with `FAILED_PRECONDITION`).
+### Terminal 3 — restaurant
 
-### 7. Exception handling (gRPC status codes)
+```
+$ python3 restaurant.py localhost:50051 "Pizza House"
+[Restaurant] Logged in as 'Pizza House'. Type 'help' for commands.
+
+> pending
+[Restaurant] Order O101 : PLACED   (Margherita Pizza x1, Garlic Bread x2 | Total: 550)
+
+> accept O101
+[Restaurant] Order O101 : ACCEPTED
+
+> prepare O101
+[Restaurant] Order O101 : PREPARING
+
+> ready O101
+[Restaurant] Order O101 : READY
+
+> prepare O101
+[Error] Invalid order state transition: READY -> PREPARING (FAILED_PRECONDITION)
+
+> exit
+[Restaurant] Bye.
+```
+
+### Concurrent clients
+
+Open a second customer and place an order while the first is tracking, and a
+second restaurant as `"Burger Point"`. Each order gets a unique id, each
+restaurant sees only its own orders, and the server serialises everything behind
+one lock, so two restaurants racing to accept the same order produce exactly one
+success — the loser gets `FAILED_PRECONDITION` because the order has already
+left the `PLACED` state.
+
+### Exception handling
+
 ```
 > order Taco Town "Burrito" 1
 [Error] Restaurant 'Taco Town' does not exist. (NOT_FOUND)
@@ -182,7 +206,18 @@ restaurant only sees its own orders.
 | Non-existent restaurant / item / order | `NOT_FOUND` |
 | Empty order or non-positive quantity | `INVALID_ARGUMENT` |
 | Cancel after PLACED, or any illegal transition | `FAILED_PRECONDITION` |
-| Restaurant touches another restaurant's order | `PERMISSION_DENIED` |
+| Restaurant touches another restaurant's order, or tries to cancel | `PERMISSION_DENIED` |
+
+### Where each required demonstration point appears
+
+| Required | Where |
+|---|---|
+| Listing restaurants | terminal 2, `restaurants` |
+| Placing an order | terminal 2, order `O101`, total 550 |
+| A restaurant processing the order | terminal 3, `accept` / `prepare` / `ready` |
+| A customer receiving real-time updates | terminal 2, the four `[Update]` lines |
+| Two clients interacting concurrently | terminals 2 and 3 |
+| Two exceptional cases with status codes | `NOT_FOUND` in terminal 2, `FAILED_PRECONDITION` in terminal 3, and four more listed above |
 
 ---
 

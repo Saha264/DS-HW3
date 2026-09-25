@@ -1,0 +1,12 @@
+# generated protobuf stubs (recreate with ./generate_stubs.sh)
+Section 3/Q2_food_ordering/*_pb2.py
+Section 3/Q2_food_ordering/*_pb2_grpc.py
+Section 3/Q2_food_ordering/venv/
+
+# scratch output from running the pipeline
+Section 1/Q2/work_sssp/
+Section 1/Q2/output.txt
+
+__pycache__/
+*.pyc
+.vscode/
