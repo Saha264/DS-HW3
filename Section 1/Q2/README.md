@@ -13,11 +13,11 @@ orchestrated with Bash.
 | `prep.py` | Turns the raw edge list into the starting node state |
 | `mapper.py` | One relaxation step: re-emits the graph + proposes new distances |
 | `combiner.py` | Merges duplicate proposals locally, and partitions them across reducers |
-| `reducer.py` | Picks the minimum distance per node, counts how many changed |
+| `reducer.py` | Picks the minimum distance per node, counts how many changed (one process per partition) |
 | `format_output.py` | Prints the final `node distance` lines, `INF` if unreachable |
-| `sssp_local.sh` | Runs the whole thing on one machine |
-| `sssp_slurm.sh` | Runs it on the cluster under Slurm |
-| `bench_slurm.sh` | Optional: benchmark sweep over graph sizes and task counts |
+| `sssp_local.sh` | Runs the whole thing on one machine (`<input> <output> <map tasks> <reducers>`) |
+| `sssp_slurm.sh` | Runs it on the cluster under Slurm (`sbatch --ntasks=P`) |
+| `bench_slurm.sh` | Optional: benchmark sweep; `REDUCERS=1` forces the single-reducer baseline |
 | `gen_graph.py` | Makes random test graphs (same seed = same graph) |
 | `dijkstra_ref.py` | Ordinary sequential Dijkstra, used to check our answers |
 | `verify.sh` | Runs all tests and compares against Dijkstra |
@@ -112,13 +112,21 @@ Each iteration is one MapReduce job:
    survives to the next round) and, if the node is reachable, emits
    `neighbour \t D|dist+weight` for every out-edge. That is one Bellman-Ford
    relaxation.
-2. **Shuffle** (`sort`) — groups everything for the same node together.
-3. **Combiner** — on each mapper's output, collapses repeated proposals for the
-   same node into one minimum, so less data crosses the network.
-4. **Reducer** — for each node takes the minimum of its old distance and all
-   proposals, writes the new line, and counts how many nodes improved.
-5. The driver script repeats until the reducer reports **0 improvements** —
-   at that point no edge can be relaxed further, so the distances are final.
+2. **Local sort** (`sort`) — groups everything for the same node together
+   within one mapper's output.
+3. **Combiner** — collapses repeated proposals for the same node into one
+   minimum, so less data crosses the network. With `R > 1` reducers it also
+   partitions its output by `node_id % R`, which guarantees that every record
+   for a node ends up in the same partition.
+4. **Shuffle** (`sort -m`) — merges partition `r` across all mappers, so
+   reducer `r` receives one sorted stream. The `R` merges are independent and
+   run at the same time.
+5. **Reducers** — each owns a disjoint set of nodes, so all `R` run
+   concurrently. For each node one takes the minimum of its old distance and
+   all proposals, writes the new line, and counts how many nodes improved. The
+   new state is the concatenation of their outputs.
+6. The driver repeats until the reducers' improvement counts **sum to 0** — at
+   that point no edge can be relaxed further, so the distances are final.
 
 Unreachable nodes never receive a proposal, stay at `1000000`, and are printed
 as `INF`. Converges in about the graph's hop-diameter rounds (22 rounds for
