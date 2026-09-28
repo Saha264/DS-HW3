@@ -1,21 +1,25 @@
 #!/bin/bash
 # Local MapReduce driver for iterative SSSP (no cluster needed).
 #
-#   ./sssp_local.sh <input-file> [output-file] [num-map-tasks]
+#   ./sssp_local.sh <input-file> [output-file] [num-map-tasks] [num-reducers]
 #
 # One MapReduce job per Bellman-Ford iteration:
-#     mapper | sort | combiner | sort | reducer
-# repeated until the reducer reports zero distance updates.
+#     mapper | sort | combiner  ->  partitions  ->  merge  ->  reducer
+# repeated until the reducers report zero distance updates between them.
+#
+# With num-reducers > 1 the combiner partitions its output by node id, so each
+# reducer owns a disjoint set of nodes and they can run concurrently.
 
 INPUT_FILE=${1:-tests/sample.txt}
 OUTPUT_FILE=${2:-output.txt}
 NMAP=${3:-3}
+NRED=${4:-1}
 
 cd "$(dirname "$0")"
 
 if [ ! -f "$INPUT_FILE" ]; then
     echo "ERROR: input file '$INPUT_FILE' not found." >&2
-    echo "usage: ./sssp_local.sh <input-file> [output-file] [num-map-tasks]" >&2
+    echo "usage: ./sssp_local.sh <input-file> [output-file] [num-map-tasks] [num-reducers]" >&2
     exit 1
 fi
 
@@ -30,19 +34,28 @@ while [ "$ITER" -lt "$V" ]; do
     NEXT=$((ITER + 1))
 
     # split the state into NMAP chunks -- each chunk is one independent map task
-    rm -f "$WORK"/chunk_*
+    rm -f "$WORK"/chunk_* "$WORK"/map_* "$WORK"/shuffled.* "$WORK"/counter.* "$WORK"/part.*
     split -d -a 2 -n l/$NMAP "$WORK/state.$ITER" "$WORK/chunk_"
 
-    : > "$WORK/map.$NEXT"
+    # map + local sort + combine, partitioned by node id
     for CHUNK in "$WORK"/chunk_*; do
-        python3 mapper.py < "$CHUNK" | sort | python3 combiner.py >> "$WORK/map.$NEXT"
+        TID=${CHUNK##*chunk_}
+        python3 mapper.py < "$CHUNK" | sort | python3 combiner.py "$NRED" "$WORK/map_${TID}_part"
     done
 
-    # shuffle: group all records of a node together, then reduce
-    sort "$WORK/map.$NEXT" \
-        | python3 reducer.py > "$WORK/state.$NEXT" 2> "$WORK/counter.$NEXT"
+    # shuffle: merge each partition across all mappers, then reduce it
+    R=0
+    while [ "$R" -lt "$NRED" ]; do
+        sort -m "$WORK"/map_*_part"$R" > "$WORK/shuffled.$R"
+        python3 reducer.py < "$WORK/shuffled.$R" \
+            > "$WORK/part.$R" 2> "$WORK/counter.$R" &
+        R=$((R + 1))
+    done
+    wait
+    cat "$WORK"/part.* > "$WORK/state.$NEXT"
 
-    UPDATED=$(sed -n 's/.*UPDATED,\([0-9]*\).*/\1/p' "$WORK/counter.$NEXT")
+    UPDATED=$(cat "$WORK"/counter.* | sed -n 's/.*UPDATED,\([0-9]*\).*/\1/p' \
+              | awk '{ s += $1 } END { print s + 0 }')
     echo "iteration $NEXT: ${UPDATED:-0} distance update(s)"
     ITER=$NEXT
     [ "${UPDATED:-0}" -eq 0 ] && break

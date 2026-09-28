@@ -12,10 +12,12 @@ orchestrated with Bash.
 |---|---|
 | `prep.py` | Turns the raw edge list into the starting node state |
 | `mapper.py` | One relaxation step: re-emits the graph + proposes new distances |
-| `combiner.py` | Merges duplicate proposals locally before the shuffle (optimisation) |
+| `combiner.py` | Merges duplicate proposals locally, and partitions them across reducers |
 | `reducer.py` | Picks the minimum distance per node, counts how many changed |
 | `format_output.py` | Prints the final `node distance` lines, `INF` if unreachable |
 | `sssp_local.sh` | Runs the whole thing on one machine |
+| `sssp_slurm.sh` | Runs it on the cluster under Slurm |
+| `bench_slurm.sh` | Optional: benchmark sweep over graph sizes and task counts |
 | `gen_graph.py` | Makes random test graphs (same seed = same graph) |
 | `dijkstra_ref.py` | Ordinary sequential Dijkstra, used to check our answers |
 | `verify.sh` | Runs all tests and compares against Dijkstra |
@@ -69,11 +71,16 @@ You should see:
 First create one (`gen_graph.py V E seed`), then run on it:
 ```bash
 python3 gen_graph.py 10000 50000 7 > big.txt
-./sssp_local.sh big.txt output.txt 4
+./sssp_local.sh big.txt output.txt 4 4
 ```
-The last number (`4`) is how many map tasks to simulate. Any number works;
-the answer is always the same. To use your own graph file, just put its
-name in place of `big.txt`.
+The last two numbers are how many map tasks and how many reducers to use.
+Both are optional (they default to 3 and 1). Any values work — the answer never
+depends on them, which is what `verify.sh` checks. To use your own graph file,
+put its name in place of `big.txt`.
+
+With more than one reducer, the combiner partitions its output by `node_id % R`
+so that every record for a node reaches the same reducer, and the reducers then
+run concurrently.
 
 **Step 4 — check correctness against Dijkstra**
 ```bash
@@ -84,7 +91,7 @@ Prints `PASS`/`FAIL` for each test and ends with `ALL TESTS PASSED`.
 **Making a big graph for timing**
 ```bash
 python3 gen_graph.py 10000 50000 7 > big.txt     # V=10000, E=50000, seed=7
-./sssp_local.sh big.txt big_out.txt 4
+./sssp_local.sh big.txt big_out.txt 4 4
 python3 dijkstra_ref.py < big.txt > big_ref.txt
 diff big_out.txt big_ref.txt && echo MATCH
 ```
@@ -120,7 +127,9 @@ V=10000, E=50000), never more than V.
 ## Correctness
 
 `verify.sh` compares the MapReduce output byte-for-byte with `dijkstra_ref.py`
-on: the assignment sample, a chain, a cycle, an edgeless graph, a graph with
-an unreachable component, and 3 random 150-node graphs — each with 1, 2 and 3
-map tasks, confirming the result does not depend on how the input is split.
-A V=10000 / E=50000 random graph also matches exactly.
+on: the assignment sample, a chain, a cycle, an edgeless graph, a graph with an
+unreachable component, and 3 random 150-node graphs. Each case runs at several
+map-task and reducer counts, confirming the result depends on neither: mappers
+must not lose records at a chunk boundary, and the partitioner must not split
+one node's proposals across two reducers. It also checks that the iteration
+count is identical for every reducer count.

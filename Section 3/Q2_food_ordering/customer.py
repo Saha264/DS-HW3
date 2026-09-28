@@ -101,6 +101,7 @@ class CustomerClient:
         print("[Client]   %s | %s | Total: %d" % (resp.restaurant_name, items, resp.total))
 
     def track_order(self, order_id):
+        # the stream is consumed on a background thread so the prompt stays usable
         def worker():
             try:
                 for upd in self.stub.SubscribeToOrderUpdates(pb.OrderRequest(order_id=order_id)):
@@ -129,6 +130,7 @@ class CustomerClient:
         print("[Client] Connected. Type 'help' for commands.")
         print(MENU)
         while True:
+            # command loop: read a line, dispatch, repeat
             try:
                 line = input("> ").strip()
             except (EOFError, KeyboardInterrupt):

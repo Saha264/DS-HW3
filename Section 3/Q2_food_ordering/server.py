@@ -58,6 +58,7 @@ TERMINAL = {pb.READY, pb.CANCELLED}
 STATUS_NAME = pb.OrderStatus.Name
 
 
+# One order in memory. __slots__ keeps it small since there may be many.
 class Order:
     __slots__ = ("order_id", "restaurant", "items", "total", "status")
 
@@ -80,6 +81,7 @@ class Order:
 
 class FoodOrderingServicer(pb_grpc.FoodOrderingServiceServicer):
     def __init__(self):
+        # one lock guards every piece of shared state below
         self._lock = threading.Lock()
         self._orders = {}            # order_id -> Order
         self._subscribers = {}       # order_id -> [queue.Queue, ...]
@@ -127,6 +129,7 @@ class FoodOrderingServicer(pb_grpc.FoodOrderingServiceServicer):
         if not request.items:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Order must contain at least one item.")
 
+        # price the order, rejecting anything not on this restaurant's menu
         items, total = [], 0
         for it in request.items:
             if it.name not in menu:
@@ -138,6 +141,8 @@ class FoodOrderingServicer(pb_grpc.FoodOrderingServiceServicer):
             items.append((it.name, it.quantity))
             total += menu[it.name] * it.quantity
 
+        # id allocation and insertion happen together under the lock, so two
+        # concurrent PlaceOrder calls can never be handed the same id
         with self._lock:
             order_id = "O%d" % self._next_id
             self._next_id += 1
@@ -187,6 +192,8 @@ class FoodOrderingServicer(pb_grpc.FoodOrderingServiceServicer):
         return pb.PendingOrdersResponse(orders=pending)
 
     def SubscribeToOrderUpdates(self, request, context):
+        # this subscriber's mailbox; updates are pushed into it by whichever
+        # RPC thread changes the order
         q = queue.Queue()
         with self._lock:
             order = self._get_order_or_abort(request.order_id, context)
@@ -199,6 +206,7 @@ class FoodOrderingServicer(pb_grpc.FoodOrderingServiceServicer):
                 return
             self._subscribers.setdefault(order.order_id, []).append(q)
 
+        # yield outside the lock, so a slow client cannot block the server
         try:
             while context.is_active():
                 try:
@@ -208,6 +216,7 @@ class FoodOrderingServicer(pb_grpc.FoodOrderingServiceServicer):
                 yield update
                 if update.status in TERMINAL:
                     break
+        # always deregister, including when the client disconnects mid-stream
         finally:
             with self._lock:
                 subs = self._subscribers.get(request.order_id, [])

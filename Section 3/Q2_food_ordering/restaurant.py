@@ -53,6 +53,7 @@ class RestaurantClient:
             print("[Restaurant] Order %s : %s   (%s | Total: %d)"
                   % (o.order_id, STATUS_NAME(o.status), items, o.total))
 
+    # all three status commands are the same RPC with a different target state
     def update(self, order_id, new_status):
         req = pb.OrderStatusUpdate(order_id=order_id, restaurant_name=self.name, new_status=new_status)
         try:
@@ -65,6 +66,7 @@ class RestaurantClient:
         print("[Restaurant] Logged in as '%s'. Type 'help' for commands." % self.name)
         print(MENU)
         while True:
+            # command loop: read a line, dispatch, repeat
             try:
                 line = input("> ").strip()
             except (EOFError, KeyboardInterrupt):

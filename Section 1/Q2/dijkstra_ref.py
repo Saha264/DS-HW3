@@ -11,6 +11,7 @@ INF = 1000000
 
 
 def main():
+    # same input format as the pipeline: "V E" then E triples
     data = sys.stdin.read().split()
     V, E = int(data[0]), int(data[1])
     g = [[] for _ in range(V)]
@@ -21,18 +22,20 @@ def main():
         if 0 <= u < V and 0 <= v < V:
             g[u].append((v, w))
 
+    # textbook Dijkstra with a binary heap, source fixed at node 0
     dist = [INF] * V
     dist[0] = 0
     pq = [(0, 0)]
     while pq:
         d, u = heapq.heappop(pq)
         if d != dist[u]:
-            continue
+            continue          # stale heap entry, a shorter path was already found
         for v, w in g[u]:
             if d + w < dist[v]:
                 dist[v] = d + w
                 heapq.heappush(pq, (d + w, v))
 
+    # same output format as the pipeline, so the two can be diffed
     out = sys.stdout
     for i in range(V):
         out.write("%d INF\n" % i if dist[i] >= INF else "%d %d\n" % (i, dist[i]))

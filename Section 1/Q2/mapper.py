@@ -15,6 +15,7 @@ INF = 1000000
 
 
 def main():
+    # one input line = one node's state for this iteration
     out = sys.stdout
     for line in sys.stdin:
         line = line.rstrip("\n")
@@ -30,6 +31,7 @@ def main():
         if dist >= INF or not adj:          #not adj is jsut checking if adj is an empty string
             continue                      # unreachable: nothing to relax
 
+        # relax every outgoing edge: propose dist+w to each neighbour
         for edge in adj.split(";"):
             v, _, w = edge.partition(",")
             out.write("%s\tD|%d\n" % (v, dist + int(w)))

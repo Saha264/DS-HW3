@@ -10,11 +10,13 @@ import sys
 INF=1000000
 
 def main():
+    # read the whole edge list at once: "V E" then E triples of "u v w"
     data= sys.stdin.read().split()
     if len(data) < 2:
         return
     V,E= int(data[0]), int(data[1])
     
+    # build one adjacency list per node, as "v,w" strings ready to be joined
     adj= [[]for _ in range(V)]
     pos =2
     for _ in range(E):
@@ -23,6 +25,7 @@ def main():
         if 0<=u <V and 0<=v < V:
             adj[u].append("%d,%d" %(v,w))
             
+    # emit the starting state: source at 0, everything else unreachable
     out=sys.stdout
     for i in range(V):
         out.write("%d\t%d|%s\n" % (i, 0 if i == 0 else INF, ";".join(adj[i])))

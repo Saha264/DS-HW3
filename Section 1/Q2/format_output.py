@@ -10,6 +10,7 @@ INF = 1000000
 
 
 def main():
+    # collect the final distance of every node; adjacency lists are dropped here
     dist = {}
     for line in sys.stdin:
         line = line.rstrip("\n")

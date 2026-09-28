@@ -3,9 +3,25 @@ Section 3/Q2_food_ordering/*_pb2.py
 Section 3/Q2_food_ordering/*_pb2_grpc.py
 Section 3/Q2_food_ordering/venv/
 
-# scratch output from running the pipeline
+# Section 1: the report source, plus the benchmark artefacts and figures it uses
+# (REPORT.pdf is the submitted version and stays tracked)
+Section 1/Q2/REPORT.md
+Section 1/Q2/plots/
+Section 1/Q2/perf_results/
+Section 1/Q2/make_plots.py
+Section 1/Q2/bench_graphs/
 Section 1/Q2/work_sssp/
+Section 1/Q2/work_bench_*/
 Section 1/Q2/output.txt
+Section 1/Q2/big.txt
+
+# slurm job logs
+*_results_*.out
+*_results_*.err
+bench_results_*.out
+bench_results_*.err
+grpc_bench_*.out
+grpc_bench_*.err
 
 __pycache__/
 *.pyc

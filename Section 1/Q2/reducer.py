@@ -16,6 +16,7 @@ def main():
     out = sys.stdout
     updates = 0
 
+    # state for the key currently being accumulated
     node = None
     old_dist = INF     # distance the node had at the start of this iteration
     best = INF         # best candidate distance seen this iteration
@@ -27,6 +28,7 @@ def main():
             continue
         key, _, value = line.partition("\t")
 
+        # keys arrive sorted, so a change of key means the previous one is done
         if key != node:                                  # key boundary
             if node is not None:
                 if best < old_dist:
@@ -42,6 +44,7 @@ def main():
             if cand < best:
                 best = cand
 
+    # flush the last key, which has no following key to trigger the boundary
     if node is not None:
         if best < old_dist:
             updates += 1
